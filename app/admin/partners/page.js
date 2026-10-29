@@ -54,7 +54,9 @@ function PartnersContent() {
         p.id.toLowerCase().includes(search.toLowerCase());
 
       const matchStatus =
-        statusFilter === "ALL" || p.verificationStatus === statusFilter;
+        statusFilter === "ALL" ||
+        p.verificationStatus === statusFilter ||
+        (statusFilter === "Pending Verification" && (p.verificationStatus === "Pending" || p.verificationStatus === "Pending Verification"));
 
       const matchAccount =
         accountFilter === "ALL" || p.accountStatus === accountFilter;
@@ -228,15 +230,15 @@ function PartnersContent() {
                           {partner.businessName}
                         </div>
                         <div className="text-[11px] text-[#77746E]">
-                          {partner.branchCount} Branch
-                          {partner.branchCount > 1 ? "es" : ""} • ⭐{" "}
-                          {partner.rating}
+                          {partner.branchCount || 1} Branch
+                          {(partner.branchCount || 1) > 1 ? "es" : ""} • ⭐{" "}
+                          {partner.rating || "4.8"}
                         </div>
                       </td>
 
                       {/* Registration Date */}
                       <td className="px-4 py-4 text-[#54514B]">
-                        {formatDate(partner.registrationDate)}
+                        {formatDate(partner.registrationDate || partner.createdAt || partner.submittedAt)}
                       </td>
 
                       {/* Verification Status */}

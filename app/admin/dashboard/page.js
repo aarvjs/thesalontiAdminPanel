@@ -25,7 +25,11 @@ export default function AdminDashboardPage() {
   // Compute metrics
   const totalPartners = partners.length;
   const pendingPartners = partners.filter(
-    (p) => p.verificationStatus === "Pending Verification" || p.verificationStatus === "Under Review"
+    (p) =>
+      p.verificationStatus === "Pending" ||
+      p.verificationStatus === "Pending Verification" ||
+      p.verificationStatus === "Under Review" ||
+      p.verificationStatus === "Action Required"
   );
   const approvedSalons = salons.filter((s) => s.status === "Active").length;
   const activeBookings = bookings.filter((b) => b.status === "Confirmed" || b.status === "Pending").length;

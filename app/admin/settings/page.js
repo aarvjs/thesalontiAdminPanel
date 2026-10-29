@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   User,
   Shield,
@@ -14,13 +14,29 @@ import ToggleSwitch from "../../../components/ui/ToggleSwitch";
 import { useAdmin } from "../../../context/AdminContext";
 
 export default function SettingsPage() {
-  const { currentAdmin, setCurrentAdmin, platformSettings, updateSettings, addToast } = useAdmin();
+  const { currentAdmin, platformSettings, updateSettings, updateAdminProfile, addToast } = useAdmin();
 
   const [activeTab, setActiveTab] = useState("platform"); // "platform" | "profile" | "verification" | "notifications" | "security"
 
   // Local form drafts
-  const [profileDraft, setProfileDraft] = useState({ ...currentAdmin });
+  const [profileDraft, setProfileDraft] = useState({
+    name: currentAdmin?.name || "",
+    email: currentAdmin?.email || "",
+    role: currentAdmin?.role || "Super Administrator",
+    department: currentAdmin?.department || "Executive Platform Administration",
+  });
   const [platformDraft, setPlatformDraft] = useState({ ...platformSettings });
+
+  useEffect(() => {
+    if (currentAdmin) {
+      setProfileDraft({
+        name: currentAdmin?.name || "",
+        email: currentAdmin?.email || "",
+        role: currentAdmin?.role || "Super Administrator",
+        department: currentAdmin?.department || "Executive Platform Administration",
+      });
+    }
+  }, [currentAdmin]);
 
   const [notifDraft, setNotifDraft] = useState({
     emailKYCAlerts: true,
@@ -36,10 +52,17 @@ export default function SettingsPage() {
     auditLogRetentionDays: 365,
   });
 
-  const handleSaveProfile = (e) => {
+  const handleSaveProfile = async (e) => {
     e.preventDefault();
-    setCurrentAdmin(profileDraft);
-    addToast("Admin profile updated successfully.", "success");
+    if (updateAdminProfile) {
+      try {
+        await updateAdminProfile(profileDraft);
+      } catch (err) {
+        console.error("Save profile error:", err);
+      }
+    } else {
+      addToast("Admin profile updated.", "success");
+    }
   };
 
   const handleSavePlatform = (e) => {

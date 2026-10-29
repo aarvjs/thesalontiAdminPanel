@@ -1,29 +1,53 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, Lock, Mail, ShieldAlert, Sparkles, ArrowRight } from "lucide-react";
+import {
+  signInWithEmailAndPassword,
+  sendPasswordResetEmail,
+  signOut,
+} from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import {
+  Eye,
+  EyeOff,
+  Lock,
+  Mail,
+  ShieldAlert,
+  Sparkles,
+  ArrowRight,
+  Loader2,
+} from "lucide-react";
 import { BRAND } from "../../../lib/constants";
+import { auth, db } from "../../../lib/firebase";
 import { useAdmin } from "../../../context/AdminContext";
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const { addToast } = useAdmin();
+  const { addToast, isSuperAdmin, authLoading } = useAdmin();
 
-  const [email, setEmail] = useState("sanjay.admin@thesalontimes.com");
-  const [password, setPassword] = useState("Admin@Salon2026");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const handleSubmit = (e) => {
+  // If already logged in as Super Admin, redirect immediately
+  useEffect(() => {
+    if (!authLoading && isSuperAdmin) {
+      router.replace("/admin/dashboard");
+    }
+  }, [authLoading, isSuperAdmin, router]);
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
 
-    if (!email || !email.includes("@")) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email || !emailRegex.test(email.trim())) {
       setError("Please enter a valid administrative work email address.");
       return;
     }
@@ -35,18 +59,79 @@ export default function AdminLoginPage() {
 
     setIsLoading(true);
 
-    setTimeout(() => {
-      setIsLoading(false);
-      addToast("Signed in successfully as Platform Administrator.", "success");
+    try {
+      // 1. Authenticate with Firebase Authentication
+      const userCredential = await signInWithEmailAndPassword(
+        auth,
+        email.trim(),
+        password
+      );
+      const user = userCredential.user;
+
+      // 2. Verify Super Admin role from Cloud Firestore
+      const adminRef = doc(db, "admins", user.uid);
+      const adminSnap = await getDoc(adminRef);
+
+      if (!adminSnap.exists() || adminSnap.data().role !== "super_admin") {
+        // Immediately sign out unauthorized users
+        await signOut(auth);
+        setError("Access Denied: This account is not provisioned as a Super Administrator.");
+        setIsLoading(false);
+        return;
+      }
+
+      const adminData = adminSnap.data();
+      if (adminData.status === "suspended" || adminData.status === "inactive") {
+        await signOut(auth);
+        setError("Account Inactive: Your Super Administrator account has been suspended or deactivated.");
+        setIsLoading(false);
+        return;
+      }
+
+      // 3. Authorized Super Admin
+      addToast(`Signed in successfully as ${adminData.name || "Super Administrator"}.`, "success");
       router.push("/admin/dashboard");
-    }, 600);
+    } catch (err) {
+      console.error("Super Admin sign-in error:", err);
+
+      if (
+        err.code === "auth/invalid-credential" ||
+        err.code === "auth/user-not-found" ||
+        err.code === "auth/wrong-password"
+      ) {
+        setError("Invalid administrative credentials. Please verify your email and password.");
+      } else if (err.code === "auth/too-many-requests") {
+        setError("Too many failed attempts. Access has been temporarily throttled for security. Please try again shortly.");
+      } else if (err.code === "auth/user-disabled") {
+        setError("This administrative account has been disabled by security operations.");
+      } else if (err.code === "permission-denied") {
+        setError("Firestore Security Rules rejected admin profile access. Please verify database rules.");
+      } else {
+        setError(err.message || "An unexpected error occurred during administrative sign in.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleFillDemo = () => {
-    setEmail("sanjay.admin@thesalontimes.com");
-    setPassword("Admin@Salon2026");
-    setError("");
-    addToast("Filled demo administrator credentials.", "info");
+  const handleForgotPassword = async () => {
+    if (!email || !email.includes("@")) {
+      setError("Please enter your registered work email address first to receive a password reset link.");
+      return;
+    }
+
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      addToast(`Password recovery link dispatched to ${email.trim()}.`, "info");
+      setError("");
+    } catch (err) {
+      console.error("Password reset error:", err);
+      if (err.code === "auth/user-not-found") {
+        setError("No administrator account found with this email address.");
+      } else {
+        setError("Failed to send password recovery email. Please try again.");
+      }
+    }
   };
 
   return (
@@ -126,10 +211,10 @@ export default function AdminLoginPage() {
               Administrative Access
             </span>
             <h1 className="text-2xl sm:text-3xl font-serif font-bold text-[#292824] mt-1">
-              Sign In to Admin
+              Super Admin Sign In
             </h1>
             <p className="mt-2 text-xs sm:text-sm text-[#77746E]">
-              Enter your authorized staff credentials to continue to the administration portal.
+              Authenticate with your verified Super Administrator credentials to access the platform console.
             </p>
           </div>
 
@@ -156,6 +241,7 @@ export default function AdminLoginPage() {
                   placeholder="admin@thesalontimes.com"
                   className="w-full pl-10 pr-4 py-2.5 text-sm bg-[#F8F6F1] border border-[#E9E4DB] rounded-xl text-[#292824] placeholder-[#A09D96] focus:outline-none focus:border-[#B96F45] focus:bg-white focus:ring-2 focus:ring-[#B96F45]/15 transition-all"
                   required
+                  disabled={isLoading}
                 />
               </div>
             </div>
@@ -168,10 +254,8 @@ export default function AdminLoginPage() {
                 </label>
                 <button
                   type="button"
-                  onClick={() =>
-                    addToast("Password recovery link sent to your work email (Demo)", "info")
-                  }
-                  className="text-xs font-semibold text-[#B96F45] hover:underline"
+                  onClick={handleForgotPassword}
+                  className="text-xs font-semibold text-[#B96F45] hover:underline cursor-pointer"
                 >
                   Forgot password?
                 </button>
@@ -185,12 +269,14 @@ export default function AdminLoginPage() {
                   placeholder="••••••••••••"
                   className="w-full pl-10 pr-10 py-2.5 text-sm bg-[#F8F6F1] border border-[#E9E4DB] rounded-xl text-[#292824] placeholder-[#A09D96] focus:outline-none focus:border-[#B96F45] focus:bg-white focus:ring-2 focus:ring-[#B96F45]/15 transition-all"
                   required
+                  disabled={isLoading}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3.5 top-3 text-[#77746E] hover:text-[#292824] transition-colors"
                   title={showPassword ? "Hide password" : "Show password"}
+                  tabIndex={-1}
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -205,9 +291,10 @@ export default function AdminLoginPage() {
                   checked={rememberMe}
                   onChange={(e) => setRememberMe(e.target.checked)}
                   className="w-4 h-4 rounded text-[#B96F45] border-[#E9E4DB] focus:ring-[#B96F45] cursor-pointer"
+                  disabled={isLoading}
                 />
                 <span className="text-xs text-[#54514B] font-medium">
-                  Remember this workstation for 30 days
+                  Persist administrative session on this device
                 </span>
               </label>
             </div>
@@ -219,7 +306,10 @@ export default function AdminLoginPage() {
               className="w-full py-3 px-4 bg-[#B96F45] hover:bg-[#9F5935] text-white font-semibold text-sm rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-60 cursor-pointer"
             >
               {isLoading ? (
-                <span>Signing in...</span>
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Authenticating Super Admin...</span>
+                </>
               ) : (
                 <>
                   <span>Sign In to Dashboard</span>
@@ -229,28 +319,17 @@ export default function AdminLoginPage() {
             </button>
           </form>
 
-          {/* Quick Demo Helper */}
-          <div className="mt-6 pt-5 border-t border-[#F3EFE8] flex flex-col items-center gap-3 text-center">
-            <button
-              type="button"
-              onClick={handleFillDemo}
-              className="text-xs font-semibold text-[#B96F45] bg-[#F6ECE5] hover:bg-[#EBD4C6] border border-[#EBD4C6] px-3.5 py-1.5 rounded-lg transition-colors cursor-pointer"
-            >
-              Fill Demo Admin Credentials
-            </button>
-
-            <p className="text-[11px] text-[#A09D96]">
-              Need to onboard a new platform administrator?{" "}
-              <Link href="/admin/register" className="font-semibold text-[#B96F45] hover:underline">
-                Request Onboarding
+          {/* Footer link to register */}
+          <div className="mt-8 pt-6 border-t border-[#F3EFE8] flex flex-col items-center gap-3 text-center">
+            <p className="text-xs text-[#77746E]">
+              Setting up platform administration for the first time?{" "}
+              <Link
+                href="/admin/register"
+                className="font-semibold text-[#B96F45] hover:underline"
+              >
+                Provision Super Admin
               </Link>
             </p>
-          </div>
-
-          {/* Security Disclaimer Note */}
-          <div className="mt-6 p-3 rounded-xl bg-[#F8F6F1] border border-[#E9E4DB] text-[11px] text-[#77746E] leading-relaxed">
-            <span className="font-bold text-[#292824] block mb-0.5">🔒 Sandbox Prototype Mode</span>
-            Real administrative authentication with hardware 2FA and session token rotation will be enforced via server-side infrastructure in production.
           </div>
         </div>
       </div>

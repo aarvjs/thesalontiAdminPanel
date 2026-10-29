@@ -17,7 +17,12 @@ import { useAdmin } from "../../context/AdminContext";
 export default function Topbar({ onMenuClick }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { currentAdmin, notifications, markAllNotificationsRead, addToast } = useAdmin();
+  const context = useAdmin();
+  const currentAdmin = context?.currentAdmin || null;
+  const notifications = context?.notifications || [];
+  const markAllNotificationsRead = context?.markAllNotificationsRead || (() => {});
+  const addToast = context?.addToast || (() => {});
+  const logout = context?.logout || (() => {});
 
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -25,6 +30,19 @@ export default function Topbar({ onMenuClick }) {
 
   const notifRef = useRef(null);
   const userRef = useRef(null);
+
+  const adminName = currentAdmin?.name || "Super Administrator";
+  const adminEmail = currentAdmin?.email || "admin@thesalontimes.com";
+  const adminRole = currentAdmin?.role || "Super Administrator";
+  const initials = adminName
+    ? adminName
+        .split(" ")
+        .filter(Boolean)
+        .map((n) => n[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2)
+    : "SA";
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -40,7 +58,9 @@ export default function Topbar({ onMenuClick }) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const unreadCount = Array.isArray(notifications)
+    ? notifications.filter((n) => !n?.read).length
+    : 0;
 
   // Handle global search Enter
   const handleSearchSubmit = (e) => {
@@ -187,10 +207,10 @@ export default function Topbar({ onMenuClick }) {
             className="flex items-center gap-2 p-1.5 rounded-xl border border-[#E9E4DB] hover:bg-[#F8F6F1] transition-colors"
           >
             <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#B96F45] to-[#9F5935] text-white flex items-center justify-center text-xs font-bold shadow-xs">
-              SD
+              {initials}
             </div>
             <span className="text-xs font-bold text-[#292824] hidden sm:block">
-              {currentAdmin.name}
+              {adminName}
             </span>
             <ChevronDown className="w-3.5 h-3.5 text-[#77746E] hidden sm:block" />
           </button>
@@ -198,10 +218,10 @@ export default function Topbar({ onMenuClick }) {
           {showUserMenu && (
             <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl border border-[#E9E4DB] shadow-2xl p-2 z-50 animate-in fade-in duration-100">
               <div className="p-2 border-b border-[#F3EFE8]">
-                <p className="text-xs font-bold text-[#292824]">{currentAdmin.name}</p>
-                <p className="text-[10px] text-[#77746E] truncate">{currentAdmin.email}</p>
+                <p className="text-xs font-bold text-[#292824]">{adminName}</p>
+                <p className="text-[10px] text-[#77746E] truncate">{adminEmail}</p>
                 <span className="inline-block mt-1 px-2 py-0.5 rounded text-[9px] font-bold bg-[#F6ECE5] text-[#B96F45]">
-                  {currentAdmin.role}
+                  {adminRole}
                 </span>
               </div>
 
@@ -225,17 +245,17 @@ export default function Topbar({ onMenuClick }) {
               </div>
 
               <div className="pt-1 border-t border-[#F3EFE8]">
-                <Link
-                  href="/admin/login"
+                <button
+                  type="button"
                   onClick={() => {
                     setShowUserMenu(false);
-                    addToast("Logged out of Admin Portal", "info");
+                    logout();
                   }}
-                  className="flex items-center gap-2.5 px-2.5 py-2 text-xs font-semibold text-[#B3392E] hover:bg-[#FDECEB] rounded-lg transition-colors"
+                  className="w-full flex items-center gap-2.5 px-2.5 py-2 text-xs font-semibold text-[#B3392E] hover:bg-[#FDECEB] rounded-lg transition-colors cursor-pointer text-left"
                 >
                   <LogOut className="w-3.5 h-3.5" />
                   Sign Out
-                </Link>
+                </button>
               </div>
             </div>
           )}

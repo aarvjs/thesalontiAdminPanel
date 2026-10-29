@@ -37,12 +37,32 @@ const ICON_MAP = {
 
 export default function Sidebar({ isOpen, onClose }) {
   const pathname = usePathname();
-  const { partners, currentAdmin, addToast } = useAdmin();
+  const context = useAdmin();
+  const partners = context?.partners || [];
+  const currentAdmin = context?.currentAdmin || null;
+  const logout = context?.logout || (() => {});
 
-  // Count pending verifications
-  const pendingCount = partners.filter(
-    (p) => p.verificationStatus === "Pending Verification" || p.verificationStatus === "Under Review"
-  ).length;
+  const adminName = currentAdmin?.name || "Super Administrator";
+  const adminRole = currentAdmin?.role || "Super Administrator";
+  const initials = adminName
+    ? adminName
+        .split(" ")
+        .filter(Boolean)
+        .map((n) => n[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2)
+    : "SA";
+
+  // Count pending verifications safely
+  const pendingCount = Array.isArray(partners)
+    ? partners.filter(
+        (p) =>
+          p?.verificationStatus === "Pending Verification" ||
+          p?.verificationStatus === "Under Review" ||
+          p?.verificationStatus === "Pending"
+      ).length
+    : 0;
 
   return (
     <>
@@ -132,28 +152,26 @@ export default function Sidebar({ isOpen, onClose }) {
           <div className="flex items-center justify-between p-2 rounded-xl bg-white border border-[#E9E4DB] shadow-xs">
             <div className="flex items-center gap-2.5 overflow-hidden">
               <div className="w-8 h-8 rounded-lg bg-[#F6ECE5] text-[#B96F45] border border-[#EBD4C6] flex items-center justify-center font-bold text-xs shrink-0">
-                SD
+                {initials}
               </div>
               <div className="truncate">
                 <span className="text-xs font-bold text-[#292824] block truncate">
-                  {currentAdmin.name}
+                  {adminName}
                 </span>
                 <span className="text-[10px] text-[#77746E] block truncate">
-                  {currentAdmin.role}
+                  {adminRole}
                 </span>
               </div>
             </div>
 
-            <Link
-              href="/admin/login"
-              onClick={() => {
-                addToast("Logged out of Admin Portal", "info");
-              }}
-              className="p-1.5 rounded-lg text-[#77746E] hover:text-[#B3392E] hover:bg-[#FDECEB] transition-colors"
+            <button
+              type="button"
+              onClick={logout}
+              className="p-1.5 rounded-lg text-[#77746E] hover:text-[#B3392E] hover:bg-[#FDECEB] transition-colors cursor-pointer"
               title="Logout"
             >
               <LogOut className="w-4 h-4" />
-            </Link>
+            </button>
           </div>
         </div>
       </aside>
