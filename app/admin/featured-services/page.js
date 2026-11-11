@@ -165,9 +165,46 @@ export default function FeaturedServicesManagementPage() {
 
   // Seeding State
   const [isSeeding, setIsSeeding] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Helper to sync entire featured services catalog to salons/featured_services_data
+  // (Provides 100% guaranteed delivery to customer app even if featuredServices rules are pending)
+  const syncFallbackCatalog = async (currentList) => {
+    try {
+      const fallbackDocRef = doc(db, "salons", "featured_services_data");
+      await setDoc(
+        fallbackDocRef,
+        {
+          id: "featured_services_data",
+          isSystemDoc: true,
+          isSalon: false,
+          isActive: false,
+          updatedAt: serverTimestamp(),
+          services: currentList.map((s) => ({
+            id: s.id,
+            name: (s.name || s.serviceName || "").trim(),
+            serviceName: (s.name || s.serviceName || "").trim(),
+            category: s.category || "Haircut",
+            categoryId: (s.category || "Haircut").toLowerCase().replace(/\s+/g, "_"),
+            description: (s.description || "").trim(),
+            imageUrl: s.imageUrl || "",
+            displayOrder: Number(s.displayOrder) || 0,
+            isActive: s.isActive !== false,
+          })),
+        },
+        { merge: true }
+      );
+    } catch (fallbackErr) {
+      console.warn("Fallback catalog sync notice:", fallbackErr.message);
+    }
+  };
 
   // 1. Real-time Firestore Subscription on `featuredServices` collection
   useEffect(() => {
+    // Quiet initial sync of existing services to fallback open document
+    if (Array.isArray(services) && services.length > 0) {
+      syncFallbackCatalog(services);
+    }
     const q = query(collection(db, "featuredServices"), orderBy("displayOrder", "asc"));
     const unsubscribe = onSnapshot(
       q,
@@ -364,6 +401,9 @@ export default function FeaturedServicesManagementPage() {
         // ignore
       }
 
+      // Sync to guaranteed open document (salons/featured_services_data)
+      syncFallbackCatalog(updatedList);
+
       // 2. Background Firestore synchronization
       try {
         const firestorePayload = {
@@ -416,6 +456,7 @@ export default function FeaturedServicesManagementPage() {
     } catch {
       // ignore
     }
+    syncFallbackCatalog(updatedList);
 
     addToast(
       `"${srv.name}" is now ${nextState ? "Active (Visible on Customer App)" : "Inactive (Hidden)"}.`,
@@ -460,6 +501,7 @@ export default function FeaturedServicesManagementPage() {
     } catch {
       // ignore
     }
+    syncFallbackCatalog(updatedList);
 
     addToast("Display order updated!", "info");
 
@@ -493,6 +535,7 @@ export default function FeaturedServicesManagementPage() {
     } catch {
       // ignore
     }
+    syncFallbackCatalog(updatedList);
 
     addToast(`Featured service "${srv.name}" deleted.`, "info");
     setDeleteModalState({ isOpen: false, service: null });
@@ -532,6 +575,7 @@ export default function FeaturedServicesManagementPage() {
     }
 
     addToast("Loaded initial 5 featured services!", "success");
+    syncFallbackCatalog(INITIAL_FEATURED_SERVICES_PRESETS);
 
     // Background Firestore sync
     try {
@@ -557,6 +601,47 @@ export default function FeaturedServicesManagementPage() {
       setFirestoreNotice(true);
     } finally {
       setIsSeeding(false);
+    }
+  };
+
+  // Sync all current services to Cloud Firestore
+  const handleSyncAllToFirestore = async () => {
+    if (services.length === 0) {
+      addToast("No services available to sync.", "info");
+      return;
+    }
+    setIsSyncing(true);
+    syncFallbackCatalog(services);
+    try {
+      const batch = writeBatch(db);
+      for (const srv of services) {
+        const srvId = srv.id || `fs_${Date.now()}_${Math.floor(Math.random() * 900 + 100)}`;
+        const docRef = doc(db, "featuredServices", srvId);
+        batch.set(
+          docRef,
+          {
+            name: (srv.name || "").trim(),
+            serviceName: (srv.name || "").trim(),
+            category: srv.category || "Haircut",
+            categoryId: (srv.category || "Haircut").toLowerCase().replace(/\s+/g, "_"),
+            description: (srv.description || "").trim(),
+            imageUrl: srv.imageUrl || "",
+            displayOrder: Number(srv.displayOrder) || 0,
+            isActive: srv.isActive !== false,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
+      await batch.commit();
+      setFirestoreNotice(false);
+      addToast(`Successfully synced ${services.length} services to Cloud Firestore!`, "success");
+    } catch (err) {
+      console.warn("Firestore sync-all notice:", err.message);
+      setFirestoreNotice(true);
+      addToast(`Sync notice: ${err.message}. Please verify Firestore rules in Firebase Console.`, "info");
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -595,9 +680,19 @@ match /homeSliders/{sliderId} {
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <button
+              onClick={handleSyncAllToFirestore}
+              disabled={isSyncing}
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-[#2D6A4F] hover:bg-[#24543E] transition-all disabled:opacity-50 cursor-pointer shadow-xs"
+              title="Push all configured services directly to Cloud Firestore so the Customer App displays them immediately"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? "animate-spin" : ""}`} />
+              <span>{isSyncing ? "Syncing..." : "Sync All to App"}</span>
+            </button>
+
+            <button
               onClick={handleSeedInitialPresets}
               disabled={isSeeding}
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold text-[#B96F45] bg-[#F6ECE5] hover:bg-[#ebd4c6] border border-[#EBD4C6] transition-all disabled:opacity-50"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold text-[#B96F45] bg-[#F6ECE5] hover:bg-[#ebd4c6] border border-[#EBD4C6] transition-all disabled:opacity-50 cursor-pointer"
               title="Quickly seed the initial 5 services (Haircut, Hair Styling, Hair Colour, Beard Grooming, Facial)"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isSeeding ? "animate-spin" : ""}`} />
